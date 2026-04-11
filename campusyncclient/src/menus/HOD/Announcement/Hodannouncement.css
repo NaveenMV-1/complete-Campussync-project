@@ -1,0 +1,46 @@
+/* Custom primary color variable */
+:root {
+  --primary-blue: #235dba;
+  --light-bg: #f9fafb;
+}
+
+.text-primary-custom {
+  color: var(--primary-blue) !important;
+}
+
+.bg-light-custom {
+  background-color: var(--light-bg) !important;
+  border-radius: 10px !important;
+}
+
+.border-primary-custom {
+  border: 1px solid var(--primary-blue) !important;
+  border-radius: 15px !important;
+}
+
+.profile-circle {
+  background-color: var(--primary-blue);
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 40px;
+  width: 40px;
+  border-radius: 50%;
+  font-weight: bold;
+}
+
+.btn-primary-custom {
+  background-color: var(--primary-blue) !important;
+  border: none !important;
+  padding: 10px 25px !important;
+  border-radius: 10px !important;
+}
+
+.btn-primary-custom:hover {
+  background-color: #1a468d !important;
+}
+#asdfghj{
+  width: 80%;
+  margin-right: 40px;
+}

@@ -1,0 +1,4 @@
+.border-primary-custom {
+  border: 1px solid var(--primary-blue) !important;
+  border-radius: 15px !important;
+}

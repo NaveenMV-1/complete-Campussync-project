@@ -1,0 +1,19 @@
+/* Keep text white and remove underline */
+.nav-link-custom {
+  color: rgba(255, 255, 255, 0.7) !important;
+  text-decoration: none !important;
+  transition: all 0.3s ease;
+}
+
+
+.nav-link-custom:hover {
+  background-color: #0d6efd !important; /* Blue background */
+  color: white !important;
+  transform: translateX(8px); /* Moves the box slightly right */
+}
+
+
+.nav-link-custom:focus, .nav-link-custom:active {
+  background-color: #0d6efd !important;
+  color: white !important;
+}
