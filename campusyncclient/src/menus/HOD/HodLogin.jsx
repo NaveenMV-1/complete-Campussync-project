@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { RiGraduationCapLine } from "react-icons/ri";
+import { ShieldCheck } from "react-bootstrap-icons";
 import { LuEye, LuEyeOff } from "react-icons/lu";
 import { useNavigate, Link } from "react-router-dom";
 
-function Studentlogin() {
+function HodLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -17,13 +17,13 @@ function Studentlogin() {
       const response = await fetch("http://localhost:5000/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password, role: "student" }),
+        body: JSON.stringify({ identifier, password, role: "hod" }),
       });
       const data = await response.json();
 
       if (response.ok) {
         localStorage.setItem("user", JSON.stringify(data.user));
-        navigate("/student/dashboard");
+        navigate("/hod/dashboard");
       } else {
         setError(data.error || "Login failed");
       }
@@ -47,10 +47,10 @@ function Studentlogin() {
               <div className="d-flex align-items-center gap-3 mb-4">
                 <div className="rounded-3 bg-primary bg-opacity-10 d-flex align-items-center justify-content-center" 
                      style={{ width: "50px", height: "50px" }}>
-                  <RiGraduationCapLine size={25} className="text-primary" />
+                  <ShieldCheck size={25} className="text-primary" />
                 </div>
                 <div>
-                  <h2 className="h4 mb-0 fw-bold">Student Login</h2>
+                  <h2 className="h4 mb-0 fw-bold">HOD Login</h2>
                   <p className="text-muted small mb-0">Enter your credentials to continue</p>
                 </div>
               </div>
@@ -59,11 +59,11 @@ function Studentlogin() {
 
               <form onSubmit={handleLogin}>
                 <div className="mb-3">
-                  <label className="form-label fw-medium">Register Number</label>
+                  <label className="form-label fw-medium">Employee ID or Email</label>
                   <input
                     type="text"
                     className="form-control form-control-lg fs-6"
-                    placeholder="Register Number (e.g. CSE109)"
+                    placeholder="e.g. HOD109 or hod@college.edu"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     required
@@ -98,7 +98,7 @@ function Studentlogin() {
 
               <div className="text-center mt-3">
                 <span className="text-muted small">Don't have an account? </span>
-                <Link to="/student/signup" className="text-primary small fw-bold text-decoration-none">
+                <Link to="/hod/signup" className="text-primary small fw-bold text-decoration-none">
                   Sign Up
                 </Link>
               </div>
@@ -111,4 +111,4 @@ function Studentlogin() {
   );
 }
 
-export default Studentlogin;
+export default HodLogin;

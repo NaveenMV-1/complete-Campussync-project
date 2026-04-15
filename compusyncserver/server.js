@@ -2,12 +2,32 @@ const express = require('express');
 const cors = require('cors');
 const myschema = require('./compusyncdatabase/modal');  
 const mysql2 = require('mysql2');
+const multer = require('multer');
+const nodemailer = require('nodemailer');
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
 
 const app = express();
 const port = 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
+
+// Multer storage config
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    if (!fs.existsSync('uploads')) {
+        fs.mkdirSync('uploads');
+    }
+    cb(null, 'uploads/')
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname))
+  }
+});
+const upload = multer({ storage: storage });
 
 app.get("/",(req,res)=>{
     res.send("Hello from ramya");
@@ -20,6 +40,8 @@ app.get("/",(req,res)=>{
 // --- SETUP DB ROUTE ---
 app.get("/setupdb", (req, res) => {
     const dropQueries = [
+        "DROP TABLE IF EXISTS users",
+        "DROP TABLE IF EXISTS student_files",
         "DROP TABLE IF EXISTS leavetable",
         "DROP TABLE IF EXISTS odtable",
         "DROP TABLE IF EXISTS issuestable",
@@ -56,9 +78,29 @@ app.get("/setupdb", (req, res) => {
         id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), reg VARCHAR(255),
         semester INT, gpa FLOAT, total_credits INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`;
+    const createUsers = `CREATE TABLE users (
+        id INT AUTO_INCREMENT PRIMARY KEY, 
+        name VARCHAR(255), 
+        email VARCHAR(255) UNIQUE, 
+        reg VARCHAR(255), 
+        employee_id VARCHAR(255), 
+        department VARCHAR(255), 
+        role VARCHAR(50), 
+        password VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`;
+    const createStudentFiles = `CREATE TABLE student_files (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_identifier VARCHAR(255),
+        filename VARCHAR(255),
+        filepath VARCHAR(255),
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`;
 
     try {
         dropQueries.forEach(q => myschema.query(q));
+        myschema.query(createUsers);
+        myschema.query(createStudentFiles);
         myschema.query(createLeaves);
         myschema.query(createODs);
         myschema.query(createIssues);
@@ -71,6 +113,66 @@ app.get("/setupdb", (req, res) => {
     }
 });
 
+// --- AUTH ENDPOINTS ---
+app.post("/auth/signup", async (req, res) => {
+    try {
+        const { name, email, reg, employee_id, department, role, password } = req.body;
+        
+        if (!name || !password || !role) {
+            return res.status(400).json({ error: 'Name, role, and password are required' });
+        }
+
+        const myquery = "INSERT INTO users (name, email, reg, employee_id, department, role, password) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        const fdata = [name, email || null, reg || null, employee_id || null, department || null, role, password];
+        
+        myschema.query(myquery, fdata, (err, result) => {
+            if (err) {
+                if (err.code === 'ER_DUP_ENTRY') {
+                    return res.status(400).json({ error: 'Email already exists' });
+                }
+                return res.status(500).json({ error: 'Failed to register user' });
+            }
+            res.status(200).json({ message: 'User registered successfully' });
+        });
+    } catch(err) {
+        res.status(500).json({ error: 'System error' });
+    }
+});
+
+app.post("/auth/login", async (req, res) => {
+    try {
+        const { identifier, password, role } = req.body;
+        
+        if (!identifier || !password || !role) {
+            return res.status(400).json({ error: 'Credentials and role are required' });
+        }
+
+        // Identifier could be email, reg number, or employee ID depending on role
+        let query = "SELECT * FROM users WHERE role = ? AND password = ? AND ";
+        if (role === 'student') {
+             query += "reg = ?";
+        } else {
+             query += "(email = ? OR employee_id = ?)";
+        }
+        
+        const params = role === 'student' ? [role, password, identifier] : [role, password, identifier, identifier];
+
+        myschema.query(query, params, (err, results) => {
+            if (err) return res.status(500).json({ error: 'Login failed' });
+            
+            if (results.length > 0) {
+                const user = results[0];
+                // Don't send password back
+                delete user.password;
+                res.status(200).json({ message: 'Login successful', user });
+            } else {
+                res.status(401).json({ error: 'Invalid credentials or role' });
+            }
+        });
+    } catch(err) {
+        res.status(500).json({ error: 'System error' });
+    }
+});
 
 // --- LEAVE ENDPOINTS ---
 app.post("/leave", async(req,res)=>{
@@ -198,6 +300,15 @@ app.put("/issues/:id/status", (req, res) => {
 
 // --- ANNOUNCEMENTS ENDPOINTS ---
 app.post("/announcements", async(req,res)=>{
+    // Setup real Gmail SMTP Transport
+    let transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
     try{
         const { role, author, title, content } = req.body;
         const fdata = [role, author, title, content];
@@ -207,8 +318,40 @@ app.post("/announcements", async(req,res)=>{
         }
 
         const myquery = "INSERT INTO announcementstable (role, author, title, content) VALUES (?, ?, ?, ?)";
-        myschema.query(myquery, fdata, (err, result) => {
+        myschema.query(myquery, fdata, async (err, result) => {
             if (err) return res.status(500).json({ error: 'Failed to post announcement' });
+            
+            // Notification logic
+            let targetRoles = [];
+            const safeRole = (role || "").toLowerCase();
+            if (safeRole === 'staff') {
+                targetRoles = ["student"];
+            } else if (safeRole === 'hod') {
+                targetRoles = ["student", "staff"];
+            }
+
+            if (targetRoles.length > 0) {
+               const placeholders = targetRoles.map(() => "?").join(",");
+               const emailQuery = `SELECT email FROM users WHERE role IN (${placeholders}) AND email IS NOT NULL`;
+               myschema.query(emailQuery, targetRoles, async (eErr, eResults) => {
+                   if (!eErr && eResults.length > 0) {
+                       const emails = eResults.map(r => r.email).join(", ");
+                       try {
+                           let info = await transporter.sendMail({
+                               from: `"CampusSync Admin" <${process.env.EMAIL_USER}>`,
+                               to: emails,
+                               subject: `New Announcement: ${title}`,
+                               text: content,
+                               html: `<h3>${title}</h3><p><strong>From:</strong> ${author} (${role})</p><p>${content}</p>`,
+                           });
+                           console.log("Emails sent successfully to: ", emails);
+                       } catch (sendErr) {
+                           console.error("Failed to send notification email", sendErr);
+                       }
+                   }
+               });
+            }
+
             res.status(200).json({ message: 'Announcement posted successfully' });
         });
     } catch(err) {
@@ -274,6 +417,50 @@ app.get("/getcgpa", (req, res) => {
     myschema.query("SELECT * FROM cgpatable ORDER BY semester ASC", (err, results) => {
         if (err) return res.status(500).json({ error: 'Failed to fetch CGPA' });
         res.status(200).json(results);
+    });
+});
+
+// --- FILE UPLOAD ENDPOINTS ---
+app.post("/upload", upload.single('file'), (req, res) => {
+    const { user_identifier } = req.body;
+    if (!req.file || !user_identifier) {
+        return res.status(400).json({ error: 'File and user_identifier are required' });
+    }
+
+    const filename = req.file.originalname;
+    const filepath = req.file.filename;
+
+    const myquery = "INSERT INTO student_files (user_identifier, filename, filepath) VALUES (?, ?, ?)";
+    myschema.query(myquery, [user_identifier, filename, filepath], (err, result) => {
+        if (err) return res.status(500).json({ error: 'Database error while saving file info' });
+        res.status(200).json({ message: 'File uploaded successfully', filepath });
+    });
+});
+
+app.get("/files/:identifier", (req, res) => {
+    myschema.query("SELECT * FROM student_files WHERE user_identifier = ? ORDER BY id DESC", [req.params.identifier], (err, results) => {
+        if (err) return res.status(500).json({ error: 'Failed to fetch files' });
+        res.status(200).json(results);
+    });
+});
+
+app.delete("/files/:id", (req, res) => {
+    myschema.query("SELECT * FROM student_files WHERE id = ?", [req.params.id], (err, results) => {
+        if (err || results.length === 0) return res.status(500).json({ error: 'File not found' });
+        
+        const fileRecord = results[0];
+        const filePath = path.join(__dirname, 'uploads', fileRecord.filepath);
+        
+        // delete physically
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+        
+        // delete database record
+        myschema.query("DELETE FROM student_files WHERE id = ?", [req.params.id], (delErr) => {
+            if (delErr) return res.status(500).json({ error: 'Failed to delete file from DB' });
+            res.status(200).json({ message: 'File deleted successfully' });
+        });
     });
 });
 

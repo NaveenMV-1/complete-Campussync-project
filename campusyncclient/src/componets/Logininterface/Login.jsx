@@ -10,19 +10,19 @@ const LoginScreen = () => {
       title: 'Student',
       desc: 'Access your dashboard, apply for leave & OD',
       icon: <Mortarboard size={24} className="text-primary" />,
-      path: '/student/studentlogin',
+      path: '/student/login',
     },
     {
       title: 'Faculty',
       desc: 'Manage approvals, view reports & announce',
       icon: <People size={24} className="text-primary" />,
-      path: '/staff/dashboard',
+      path: '/staff/login',
     },
     {
       title: 'HOD',
       desc: 'Department overview, analytics & management',
       icon: <ShieldCheck size={24} className="text-primary" />,
-      path: '/hod/dashboard', // This matches your App.js route
+      path: '/hod/login', // This matches your App.js route
     },
   ];
 

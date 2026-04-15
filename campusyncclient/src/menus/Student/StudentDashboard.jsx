@@ -14,14 +14,24 @@ const baseData = [
 ];
 
 const StudentDashboard = () => {
+  const [user, setUser] = useState({ reg: '9123...001', name: 'Arun Kumar' });
   const [announcements, setAnnouncements] = useState([]);
   const [chartData, setChartData] = useState(baseData);
   const [currentAttendance, setCurrentAttendance] = useState(96);
   const [leavesLeft, setLeavesLeft] = useState(10);
   const [currentCgpa, setCurrentCgpa] = useState(0.00);
 
+  // File Manager State
+  const [files, setFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
+
   useEffect(() => {
     const fetchDashboardData = async () => {
+      // Get user from local storage
+      const storedUser = JSON.parse(localStorage.getItem('user'));
+      const activeUser = storedUser || { reg: '9123...001', name: 'Arun Kumar' };
+      setUser(activeUser);
+
       // 1. Fetch announcements
       try {
         const annRes = await axios.get("http://localhost:5000/getannouncements");
@@ -33,7 +43,7 @@ const StudentDashboard = () => {
       // 2. Fetch leaves
       try {
         const leavesRes = await axios.get("http://localhost:5000/getleaves");
-        const myLeaves = leavesRes.data.filter(l => l.name === "Arun Kumar" && l.status === "Approved");
+        const myLeaves = leavesRes.data.filter(l => l.name === activeUser.name && l.status === "Approved");
         setLeavesLeft(10 - myLeaves.length);
         const attendanceDrop = myLeaves.length * 4; 
         const newAtt = 96 - attendanceDrop;
@@ -49,23 +59,68 @@ const StudentDashboard = () => {
       // 3. Fetch CGPA
       try {
         const cgpaRes = await axios.get("http://localhost:5000/getcgpa");
-        const myCgpas = cgpaRes.data.filter(c => c.name === "Arun Kumar");
+        const myCgpas = cgpaRes.data.filter(c => c.name === activeUser.name);
         if (myCgpas.length > 0) {
           setCurrentCgpa(myCgpas[myCgpas.length - 1].gpa);
         }
       } catch (e) {
         console.error("CGPA failed:", e);
       }
+
+      // 4. Fetch User Files
+      fetchFiles(activeUser.reg);
     };
     fetchDashboardData();
   }, []);
+
+  const fetchFiles = async (reg) => {
+    try {
+      const res = await axios.get(`http://localhost:5000/files/${reg}`);
+      setFiles(res.data);
+    } catch (e) {
+      console.error("Failed to fetch files", e);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!selectedFile) return alert("Please select a file to upload");
+    
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('user_identifier', user.reg);
+
+    try {
+      await axios.post("http://localhost:5000/upload", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      setSelectedFile(null); // Clear input manually
+      document.getElementById('fileInput').value = '';
+      fetchFiles(user.reg); // Refresh list
+    } catch (e) {
+      console.error("Failed to upload file", e);
+      alert("Error uploading file");
+    }
+  };
+
+  const handleDeleteFile = async (id) => {
+    try {
+      await axios.delete(`http://localhost:5000/files/${id}`);
+      fetchFiles(user.reg);
+    } catch (e) {
+      console.error("Failed to delete file", e);
+    }
+  };
 
   return (
     <div className="container-fluid p-4 bg-light" style={{ minHeight: '100vh' }}>
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="fw-bold">Welcome back, Arun 👋</h2>
-        <div className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}>A</div>
+        <h2 className="fw-bold">Welcome back, {user.name.split(' ')[0]} 👋</h2>
+        <div className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}>
+          {user.name.charAt(0).toUpperCase()}
+        </div>
       </div>
 
       {/* Top Stats Cards */}
@@ -111,7 +166,7 @@ const StudentDashboard = () => {
       </div>
 
       {/* Bottom Row: Chart and Announcements */}
-      <div className="row g-4">
+      <div className="row g-4 mb-4">
         {/* Attendance Trend Chart */}
         <div className="col-lg-7">
           <div className="card border-0 shadow-sm p-4 h-100">
@@ -150,9 +205,77 @@ const StudentDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* File Manager Section */}
+      <div className="row g-4">
+        <div className="col-12">
+          <div className="card border-0 shadow-sm p-4">
+            <h5 className="mb-4">My Documents</h5>
+            
+            <div className="d-flex align-items-center mb-4 bg-light p-3 rounded">
+              <input 
+                type="file" 
+                id="fileInput"
+                className="form-control me-3" 
+                onChange={(e) => setSelectedFile(e.target.files[0])}
+              />
+              <button 
+                className="btn btn-primary px-4 fw-bold shadow-sm flex-shrink-0"
+                onClick={handleFileUpload}
+              >
+                Upload File ↑
+              </button>
+            </div>
+
+            {files.length > 0 ? (
+              <div className="table-responsive">
+                <table className="table align-middle">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Filename</th>
+                      <th>Uploaded On</th>
+                      <th className="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {files.map(file => (
+                      <tr key={file.id}>
+                        <td className="fw-medium text-primary">
+                           📁 {file.filename}
+                        </td>
+                        <td className="text-muted small">
+                          {new Date(file.uploaded_at).toLocaleString()}
+                        </td>
+                        <td className="text-end">
+                          <a 
+                            href={`http://localhost:5000/uploads/${file.filepath}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="btn btn-sm btn-outline-secondary me-2"
+                          >
+                            View
+                          </a>
+                          <button 
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => handleDeleteFile(file.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-muted text-center py-3">No documents uploaded yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 };
-
 
 export default StudentDashboard;
